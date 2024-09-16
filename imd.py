@@ -1,8 +1,6 @@
 '''
 File to hold all functions used for Interplanetary Mission Design
 '''
-
-# imports
 from astro_constants import (MU_SUN_KM, AU_KM, Meeus, PLANETS,
                              EARTH_MOON_DIST_KM, EARTH_PERIOD_DAYS)
 import numpy as np
@@ -11,7 +9,6 @@ import matplotlib.pyplot as plt
 from math import nan
 
 
-# aliases
 def sind(degrees):
     return np.sin(np.deg2rad(degrees))
 
@@ -51,16 +48,16 @@ def sv_from_coe(oe, mu=MU_SUN_KM):
     ------------------------------------------------------------
     '''
     # unpack
-    a, e, RA, incl, w, TA = [el for el in oe]
+    a, e, RA, incl, w, TA = oe
 
     # calculate
     h = np.sqrt(mu*(a*(1-e**2)))
 
     # Write initial position along (perigee?)
-    rp = (h**2/mu) * (1/(1 + e*np.cos(TA))) * (np.cos(TA)*np.vstack((1, 0, 0))
-                                                + np.sin(TA)*np.vstack((0, 1, 0)))
-    vp = (mu/h) * (-np.sin(TA)*np.vstack((1, 0, 0))
-                    + (e + np.cos(TA))*np.vstack((0, 1, 0)))
+    rp = (h**2/mu) * (1/(1 + e*np.cos(TA))) * (np.cos(TA)*np.array((1, 0, 0))
+                                                + np.sin(TA)*np.array((0, 1, 0)))
+    vp = (mu/h) * (-np.sin(TA)*np.array((1, 0, 0))
+                    + (e + np.cos(TA))*np.array((0, 1, 0)))
 
     # Rotations based on RAAN, inclination, and AOP
     R3_W = np.array([[np.cos(RA), np.sin(RA), 0.0],
@@ -73,7 +70,7 @@ def sv_from_coe(oe, mu=MU_SUN_KM):
                     [-np.sin(w), np.cos(w), 0.0],
                     [0.0, 0.0, 1.0]])
     # Combined rotation due to orbit's angles
-    Q_pX = R3_W.transpose() @ R1_i.transpose() @ R3_w.transpose()
+    Q_pX = R3_W.T @ R1_i.T @ R3_w.T
     # Rotate r and v as column vectors
     r = Q_pX @ rp
     v = Q_pX @ vp
@@ -113,19 +110,17 @@ def coe_from_sv(R, V, mu=MU_SUN_KM):
     eps = 1.e-10
     r = np.linalg.norm(R)
     v = np.linalg.norm(V)
-    vr = np.dot(R.transpose(), V)/r
-    H = np.cross(R, V, axisa=0, axisb=0).transpose()
+    vr = np.dot(R, V)/r
+    H = np.cross(R, V).flatten()
     h = np.linalg.norm(H)
     # ...Equation 4.7:
-    if H.shape != (3, 1):
-        print(H.shape)
-    incl = np.arccos(H[2][0]/h)
+    incl = np.arccos(H[2]/h)
     # ...Equation 4.8:
-    N = np.cross(np.vstack((0, 0, 1)).transpose(), H.transpose()).transpose()
+    N = np.cross(np.array((0, 0, 1)), H)
     n = np.linalg.norm(N)
     # ...Equation 4.9:
     if n != 0:
-        ra = np.arcnp.cos(N[0][0]/n)
+        ra = np.arcnp.cos(N[0]/n)
         if N[1][0] < 0:
             ra = 2*np.pi - ra
     else:
@@ -136,7 +131,7 @@ def coe_from_sv(R, V, mu=MU_SUN_KM):
     # in case e=0
     if n != 0:
         if e > eps:
-            w = np.arccos(np.dot(N.transpose(), E)/n/e)
+            w = np.arccos(np.dot(N, E)/n/e)
             if E[2][0] < 0:
                 w = 2*np.pi - w
         else:
@@ -145,13 +140,13 @@ def coe_from_sv(R, V, mu=MU_SUN_KM):
         w = 0
     # in case e=0
     if e > eps:
-        ta = np.arccos(np.dot(E.transpose(), R)/e/r)
+        ta = np.arccos(np.dot(E, R)/e/r)
         if vr < 0:
             ta = 2*np.pi - ta
     else:
-        cp = np.cross(N, R, axisa=0, axisb=0).transpose()
-        if cp[2][0] >= 0:
-            ta = np.arccos(np.dot(N.transpose(), R)/n/r)
+        cp = np.cross(N, R, axisa=0, axisb=0).flatten()
+        if cp[2] >= 0:
+            ta = np.arccos(np.dot(N, R)/n/r)
         else:
             ta = 2*np.pi - np.arccos(np.dot(N, R)/n/r)
     # a<0 for a hyperbola
@@ -219,9 +214,9 @@ def psi_TOF(psi, r0_vec, rf_vec, mu=MU_SUN_KM):
     r0 = np.linalg.norm(r0_vec)
     rf = np.linalg.norm(rf_vec)
     # get Direction of Motion
-    cosdnu = np.dot(r0_vec.transpose(), rf_vec)/(r0*rf)
-    nu0 = np.arctan2(r0_vec[1][0], r0_vec[0][0])
-    nuf = np.arctan2(rf_vec[1][0], rf_vec[0][0])
+    cosdnu = np.dot(r0_vec, rf_vec)/(r0*rf)
+    nu0 = np.arctan2(r0_vec[1], r0_vec[0])
+    nuf = np.arctan2(rf_vec[1], rf_vec[0])
     dnu = nuf-nu0  # 2*np.pi
     DM = 1 if dnu < np.pi else -1
     # calulate A
@@ -248,7 +243,7 @@ def psi_TOF(psi, r0_vec, rf_vec, mu=MU_SUN_KM):
 
     # get the new dt
     chi = np.sqrt(y/c2)
-    dt = np.asscalar((chi**3*c3+A*np.sqrt(y))/np.sqrt(mu))
+    dt = (chi**3*c3+A*np.sqrt(y))/np.sqrt(mu)
     return dt/86400
 
 
@@ -269,7 +264,7 @@ def multirev_minflight(planet_names, dates, n_revs=0):
         psi_low = (2*n*np.pi)**2 if n != 0 else -4*np.pi  # covers hyperbolic case
         psi_high = (2*(n+1)*np.pi)**2
         psis = np.linspace(psi_low+1e-6, psi_high-1e-6)
-        tof = np.squeeze(np.array([psi_TOF(psi, p1r, p2r) for psi in psis]))
+        tof = np.array([psi_TOF(psi, p1r, p2r) for psi in psis])
         plt.plot(psis, tof, label=f'{n} Revolutions')
         plt.legend()
         plt.grid()
@@ -283,7 +278,7 @@ def multirev_minflight(planet_names, dates, n_revs=0):
         min_psi = fminbound(psi_TOF, psi_low, psi_high, args=(p1r, p2r))
         min_TOF = psi_TOF(min_psi, p1r, p2r)
         print(f'Minimum Transfer Possibility: {min_TOF:.3f} days')
-        print(f'Minimum Psi: {min_psi:.3f} ${{rad^2}}$')
+        print(fr'Minimum Psi: {min_psi:.3f} $rad^2$')
 
 
 def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
@@ -303,8 +298,8 @@ def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
     # bad case where they won't really find a valid solution
     if np.linalg.norm(rf_vec-r0_vec)/dt0 < 100:
         # find TA diff and thus motion direction
-        nu0 = np.arctan2(r0_vec[1][0], r0_vec[0][0])
-        nuf = np.arctan2(rf_vec[1][0], rf_vec[0][0])
+        nu0 = np.arctan2(r0_vec[1], r0_vec[0])
+        nuf = np.arctan2(rf_vec[1], rf_vec[0])
         dnu = (nuf-nu0) % (2*np.pi)
         if DM is None:
             DM = 1 if dnu < np.pi else -1
@@ -312,7 +307,7 @@ def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
         # get the real np.cos(delta nu)
         r0 = np.linalg.norm(r0_vec)
         rf = np.linalg.norm(rf_vec)
-        cosdnu = np.asscalar(np.dot(r0_vec.transpose(), rf_vec))/abs(r0*rf)
+        cosdnu = np.dot(r0_vec, rf_vec)/abs(r0*rf)
 
         # calulate A
         A = DM*np.sqrt(r0*rf*(1+cosdnu))
@@ -395,8 +390,8 @@ def flyby(vinf_in, vinf_out, mu):
     # psi = turn angle
 
     # calculate the turn angle
-    psi = np.asscalar(np.arccos(np.dot(vinf_in.transpose(), vinf_out) /
-                                (np.linalg.norm(vinf_in)*np.linalg.norm(vinf_out))))
+    psi = np.arccos(np.dot(vinf_in, vinf_out).item() /
+                    (np.linalg.norm(vinf_in)*np.linalg.norm(vinf_out)))
 
     # calculate the radius of periapsis
     vinf = np.mean([np.linalg.norm(vinf_in), np.linalg.norm(vinf_out)])
@@ -445,9 +440,9 @@ def res_orb(vinfm_GA1, GA1_rv, vinfp_GA2, GA2_rv, planet, min_r, XY, plot=False)
     '''
 
     # split up the GA rv's
-    r1_vec = GA1_rv[:3, :]
-    v1_vec = GA1_rv[3:, :]
-    v2_vec = GA2_rv[3:, :]
+    r1_vec = GA1_rv[:3]
+    v1_vec = GA1_rv[3:]
+    v2_vec = GA2_rv[3:]
 
     # turn Period into seconds
     Period = planet['period']*86400
@@ -468,10 +463,9 @@ def res_orb(vinfm_GA1, GA1_rv, vinfp_GA2, GA2_rv, planet, min_r, XY, plot=False)
 
     # compute the VNC to the ecliptic
     V = v1_vec/vp
-    N = np.cross(r1_vec, v1_vec, axisa=0, axisb=0).transpose() /\
-        np.linalg.norm(np.cross(r1_vec, v1_vec, axisa=0, axisb=0))
-    C = np.cross(V, N, axisa=0, axisb=0).transpose()
-    T = np.hstack((V, N, C))
+    N = np.cross(r1_vec, v1_vec) / np.linalg.norm(np.cross(r1_vec, v1_vec))
+    C = np.cross(V, N)
+    T = np.column_stack((V, N, C))
 
     # phi can be anything for now
     phis = np.arange(0, 360, 0.1)
@@ -484,7 +478,7 @@ def res_orb(vinfm_GA1, GA1_rv, vinfp_GA2, GA2_rv, planet, min_r, XY, plot=False)
     vinfm2_acc = np.array([], dtype=np.float64).reshape(3, 0)
     for phi in phis:
         # get the vnc vinf after flyby
-        vinf_pointing = np.vstack((np.cos(np.pi-theta),
+        vinf_pointing = np.array((np.cos(np.pi-theta),
                                    np.sin(np.pi-theta)*cosd(phi),
                                    -np.sin(np.pi-theta)*sind(phi)))
         vinfp_GA1_vnc = vinf*vinf_pointing
@@ -506,13 +500,13 @@ def res_orb(vinfm_GA1, GA1_rv, vinfp_GA2, GA2_rv, planet, min_r, XY, plot=False)
             phi_acc.append(phi)
             rp1_acc.append(rp1_dum)
             rp2_acc.append(rp2_dum)
-            vinfp1_acc = np.hstack((vinfp1_acc, vinfp_GA1))
-            vinfm2_acc = np.hstack((vinfm2_acc, vinfm_GA1))
+            vinfp1_acc = np.hstack((vinfp1_acc, vinfp_GA1.reshape(3,1)))
+            vinfm2_acc = np.hstack((vinfm2_acc, vinfm_GA1.reshape(3,1)))
 
     # make plot of all of the data just created
     if plot is True:
         plt.figure()
-        plt.axvspan([min(phi_acc), max(phi_acc)], color='y')
+        plt.axvspan(min(phi_acc), max(phi_acc), color='y')
         plt.plot(phis, rp1, label='Flyby 1', color='b')
         plt.plot(phis, rp2, label='Flyby2', color='r')
         plt.plot(phis, [min_r for _ in range(len(phis))],
@@ -540,28 +534,28 @@ def bplane2(r_vec, v_vec, mu):
     r = np.linalg.norm(r_vec)
     v = np.linalg.norm(v_vec)
     a = -mu/v**2
-    e_vec = 1/mu*((v**2-mu/r)*r_vec - np.dot(r_vec.transpose(), v_vec)*v_vec)
+    e_vec = 1/mu*((v**2-mu/r)*r_vec - np.dot(r_vec, v_vec)*v_vec)
     e = np.linalg.norm(e_vec)
     p = np.arccos(1/e)
 
     # all the hats
-    h_hat = np.cross(r_vec, v_vec, axisa=0, axisb=0).transpose() /\
+    h_hat = np.cross(r_vec, v_vec, axisa=0, axisb=0).T /\
             np.linalg.norm(np.cross(r_vec, v_vec, axisa=0, axisb=0))
     k_hat = [0, 0, 1]
     S_hat = e_vec/e*np.cos(p) +\
-            np.cross(h_hat, e_vec, axisa=0, axisb=0).transpose() /\
+            np.cross(h_hat, e_vec, axisa=0, axisb=0).T /\
             np.linalg.norm(np.cross(h_hat, e_vec, axisa=0, axisb=0)) * np.sin(p)
-    T_hat = np.cross(S_hat, k_hat, axisa=0, axisb=0).transpose() /\
+    T_hat = np.cross(S_hat, k_hat, axisa=0, axisb=0).T /\
             np.linalg.norm(np.cross(S_hat, k_hat, axisa=0, axisb=0))
-    R_hat = np.cross(S_hat, T_hat, axisa=0, axisb=0).transpose()
-    Bhat = np.cross(S_hat, h_hat, axisa=0, axisb=0).transpose()
+    R_hat = np.cross(S_hat, T_hat, axisa=0, axisb=0).T
+    Bhat = np.cross(S_hat, h_hat, axisa=0, axisb=0).T
 
     # outputs
     b = abs(a)*np.sqrt(e**2-1)
     B = b*Bhat
-    Bt = np.dot(B.transpose(), T_hat).item()
-    Br = np.dot(B.transpose(), R_hat).item()
-    theta = np.arccos(np.dot(T_hat.transpose(), B)).item()
+    Bt = np.dot(B, T_hat).item()
+    Br = np.dot(B, R_hat).item()
+    theta = np.arccos(np.dot(T_hat, B)).item()
     theta = 2*np.pi - theta if Br < 0 else theta
     return Bt, Br, b, theta
 
@@ -572,9 +566,9 @@ def bplane_correction(r_vec, v_vec, mu, Bt_desired, Br_desired, pert):
     '''
     # keep calculating until within the tolerance
     tol = 1e-6
-    TCM = np.vstack((0.0, 0.0))
-    delVi = np.vstack((1e3, 1e3))
-    dB = np.vstack((1e5, 1e5))
+    TCM = np.array((0.0, 0.0))
+    delVi = np.array((1e3, 1e3))
+    dB = np.array((1e5, 1e5))
     k = 0
     v_new = np.copy(v_vec)
     while np.any(abs(delVi) > tol) and np.any(abs(dB) > tol):
@@ -583,8 +577,8 @@ def bplane_correction(r_vec, v_vec, mu, Bt_desired, Br_desired, pert):
         Bt_nom, Br_nom, *_ = bplane2(r_vec, v_new, mu)
 
         # perturb the velocity
-        Vpx = v_vec + np.vstack((pert, 0, 0))
-        Vpy = v_vec + np.vstack((0, pert, 0))
+        Vpx = v_vec + np.array((pert, 0, 0))
+        Vpy = v_vec + np.array((0, pert, 0))
         Btpx, Brpx, *_ = bplane2(r_vec, Vpx, mu)
         Btpy, Brpy, *_ = bplane2(r_vec, Vpy, mu)
 
@@ -598,11 +592,11 @@ def bplane_correction(r_vec, v_vec, mu, Bt_desired, Br_desired, pert):
         dB = np.array([[Bt_desired-Bt_nom], [Br_desired-Br_nom]])
 
         # delta Vi
-        delVi = np.linalg.inv(np.array([[dBtdVx, dBtdVy], [dBrdVx, dBrdVy]])) \
-            @ dB
+        delVi = (np.linalg.inv(np.array([[dBtdVx, dBtdVy], [dBrdVx, dBrdVy]])) 
+            @ dB).flatten()
 
         # update velocity vector and TCM
-        v_new += np.vstack((delVi, 0))
+        v_new += np.append(delVi, 0)
         TCM += delVi
     return v_new-v_vec, v_new
 
@@ -640,9 +634,9 @@ def inert2rot(inert_coords, non_tspan, L=EARTH_MOON_DIST_KM):
         Tirdot = thetadot*np.array([[-np.sin(theta), -np.cos(theta), 0],
                                     [np.cos(theta), -np.sin(theta), 0],
                                     [0, 0, 0]])
-        rot_coord_pos = Tir.transpose()@inert_coords[:3, k] / L
-        rot_coord_vel = (Tirdot.transpose() @ inert_coords[:3, k] +
-                         Tir.transpose() @ inert_coords[3:, k]) / L
+        rot_coord_pos = Tir.T@inert_coords[:3, k] / L
+        rot_coord_vel = (Tirdot.T @ inert_coords[:3, k] +
+                         Tir.T @ inert_coords[3:, k]) / L
         rot_coord = np.vstack((rot_coord_pos, rot_coord_vel))
         rot_coords[:, k] = rot_coord
     return rot_coords
@@ -679,12 +673,12 @@ def tisserand(planet_numbers, contours, x_limits, y_axis='ra'):
 
             for i, alpha in enumerate(alphas):
                 # get the outgoing velocity
-                vinfOut = np.vstack([vInfMag*cosd(alpha), vInfMag*sind(alpha)])
-                vOut = np.vstack((Vp, 0.0)) + vinfOut
+                vinfOut = np.array([vInfMag*cosd(alpha), vInfMag*sind(alpha)])
+                vOut = np.array((Vp, 0.0)) + vinfOut
 
                 # get a and e for this alpha
-                a, e, *_ = coe_from_sv(np.vstack((0.0, R, 0.0)),
-                                     np.vstack((vOut, np.array(0.0))),
+                a, e, *_ = coe_from_sv(np.array((0.0, R, 0.0)),
+                                     np.append(vOut, 0.0),
                                      MU_SUN_KM)
 
                 # find the rp and ra for this alpha
@@ -725,9 +719,9 @@ def tisserand(planet_numbers, contours, x_limits, y_axis='ra'):
         max_planet = semiMajor[planet_numbers[-1]]
         # vertical lines
         for planet_num in planet_numbers:
-            plt.plot(np.hstack((semiMajor[planet_num],
-                                semiMajor[planet_num]))[semiMajor[planet_num], max_planet],
-                                color='k', linestyle=':', linewidth=1)
+            plt.plot(np.hstack((semiMajor[planet_num], semiMajor[planet_num])),
+                     [semiMajor[planet_num], max_planet],
+                     color='k', linestyle=':', linewidth=1)
 
         # horizontal lines
         for planet_num in planet_numbers:
@@ -771,12 +765,12 @@ def tisserand_path(planet_num, vInfMag):
 
     for alpha in range(180):
         # get the outgoing velocity
-        vinfOut = np.vstack((vInfMag*cosd(alpha), vInfMag*sind(alpha)))
-        vOut = np.vstack((Vp, 0)) + vinfOut
+        vinfOut = np.array((vInfMag*cosd(alpha), vInfMag*sind(alpha)))
+        vOut = np.array((Vp, 0)) + vinfOut
 
         # get a and e for this alpha
-        a, e, *_ = coe_from_sv(np.vstack((0, R, 0)),
-                               np.append(vOut, 0, axis=0),
+        a, e, *_ = coe_from_sv(np.array((0, R, 0)),
+                               np.append(vOut, 0),
                                mu=MU_SUN_KM)
 
         # find the rp and ra for this alpha
