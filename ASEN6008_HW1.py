@@ -1,4 +1,4 @@
-from IMD import PCP, flyby_diff, PCPSearch3, Planet_Info, pcp_search3
+from imd import PCP, flyby_diff, PCPSearch3, Planet_Info, pcp_search3
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd

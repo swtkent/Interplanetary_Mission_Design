@@ -2,7 +2,7 @@
 File to hold all propagators that may be used
 For now will make use of scipy.integrate.solve_ivp to do all integration
 '''
-import Astro_Constants
+from astro_constants import EARTH_MOON_CENTER
 from scipy.integrate import solve_ivp
 import numpy as np
 
@@ -76,7 +76,7 @@ def nBody(t, Z, mus):
 '''
 3-body propagator built for one small s/c orbiting around two much larger objects in space in a nondimensional rotating frame
 '''
-def CR3BP(t, Z, mu=Astro_Constants.EARTH_MOON_CENTER):
+def CR3BP(t, Z, mu=EARTH_MOON_CENTER):
     
     #sate what vals is
     x, y, z, xdot, ydot, zdot = Z
@@ -96,11 +96,11 @@ def CR3BP(t, Z, mu=Astro_Constants.EARTH_MOON_CENTER):
     return np.concatenate((v_vec, a_vec), axis=None)
 
 
-def halomaker(tspan,pos_vel_phi, mu=Astro_Constants.EARTH_MOON_CENTER):
+def halomaker(tspan,pos_vel_phi, mu=EARTH_MOON_CENTER):
     '''
     CR3BP but with a State Transition Matrix for corrections
     '''
-    #mu=Astro_Constants.EARTH_MOON_CENTER
+
     #get the position and velocity out
     rvec = pos_vel_phi[:3]
     x,y,z = rvec

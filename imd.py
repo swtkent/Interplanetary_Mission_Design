@@ -7,46 +7,12 @@ from astro_constants import MU_SUN_KM, AU_KM, Meeus, PLANETS, EARTH_MOON_DIST_KM
 import numpy as np
 from scipy.optimize import fminbound
 import matplotlib.pyplot as plt
-import math
+from math import nan
 import pandas as pd
 
 #aliases
 sind = lambda degrees: np.sin(np.deg2rad(degrees))
 cosd = lambda degrees: np.cos(np.deg2rad(degrees))
-
-
-class Planet_Info:
-    def __init__(self, name, date_range):
-        planet_info = PLANETS[name]
-        self.radius = planet_info['radius']
-        self.sgp = planet_info['mu']
-        self.name = planet_info['name']
-        self.period = planet_info['period']
-        self.set_dates(date_range)
-
-    def set_dates(self, date_range):
-        #can be used to update date range as needed
-        self.dates = date_range
-
-
-class Planet_Transfer:
-    '''
-    Used for Porkchop plot and final trajectory design to have all information needed for creating plots and telling if transfers are valid
-    '''
-    def __init__(self, planet1, planet2, leg_num):
-        self.planet1 = planet1
-        self.planet2 = planet2
-        self.name = f'{self.planet1.name}-{self.planet2.name}'
-        self.leg_number = leg_num
-
-    def set_post_search(self, transfer_tof, vinfp_C3, vinfm):
-        self.tof = transfer_tof
-        self.vinf_minus = vinfm
-        if self.leg_number!=1:
-            self.vinf_plus = vinfp_C3
-        else:
-            self.C3 = vinfp_C3
-
 
 
 def sv_from_coe(oe, mu=MU_SUN_KM):
@@ -80,30 +46,29 @@ def sv_from_coe(oe, mu=MU_SUN_KM):
     coe - vector of orbital elements [h e RA incl w TA a]
     ------------------------------------------------------------
     '''
-    #unpack
-    [a, e, RA, incl, w, TA] = [el for el in oe]
+    # unpack
+    a, e, RA, incl, w, TA = [el for el in oe]
 
-    #calculate h
+    # calculate h
     h = np.sqrt(mu*(a*(1-e**2)))
 
-    #...Equations 4.37 and 4.38 (rp and vp are column vectors):
+    # Write initial position along 
     rp = (h**2/mu) * (1/(1 + e*np.cos(TA))) * (np.cos(TA)*np.vstack((1,0,0)) + np.sin(TA)*np.vstack((0,1,0)))
     vp = (mu/h) * (-np.sin(TA)*np.vstack((1,0,0)) + (e + np.cos(TA))*np.vstack((0,1,0)))
-    #...Equation 4.39:
+    
+    # Rotations based on RAAN, inclination, and AOP
     R3_W = np.array([[ np.cos(RA), np.sin(RA), 0.0],
-    [-np.sin(RA), np.cos(RA), 0.0],
-    [0.0, 0.0, 1.0]])
-    #...Equation 4.40:
+                    [-np.sin(RA), np.cos(RA), 0.0],
+                    [0.0, 0.0, 1.0]])
     R1_i = np.array([[1.0, 0.0, 0.0],
                     [0.0, np.cos(incl), np.sin(incl)],
                     [0.0, -np.sin(incl), np.cos(incl)]])
-    #...Equation 4.41:
     R3_w = np.array([[np.cos(w), np.sin(w), 0.0],
                     [-np.sin(w), np.cos(w), 0.0],
                     [0.0, 0.0, 1.0]])
-    #...Equation 4.44:
+    # Combined rotation due to orbit's angles
     Q_pX = R3_W.transpose() @ R1_i.transpose() @ R3_w.transpose()
-    #...Equations 4.46 (r and v are column vectors):
+    # Rotate r and v as column vectors
     r = Q_pX @ rp
     v = Q_pX @ vp
     return r, v
@@ -111,13 +76,11 @@ def sv_from_coe(oe, mu=MU_SUN_KM):
 
 
 def coe_from_sv(R,V,mu=MU_SUN_KM):
-    #TOOK DIRECTLY FROM Curtis's Orbital Mechanics
-    #only change was no global mu
     '''
     ------------------------------------------------------------
 
     This function computes the classical orbital elements (coe)
-    from the state vector (R,V) using Algorithm 4.1.
+    from the state vector (R,V)
 
     mu - gravitational parameter (km**3/s**2)
     R - position vector in the geocentric equatorial frame
@@ -126,10 +89,10 @@ def coe_from_sv(R,V,mu=MU_SUN_KM):
     (km)
     r, v - the magnitudes of R and V
     vr - radial velocity component (km/s)
-    H - the angular momentum vector (km�2/s)
-    h - the magnitude of H (km�2/s)
+    H - the angular momentum vector (km^2/s)
+    h - the magnitude of H (km^2/s)
     incl - inclination of the orbit (rad)
-    N - the node line vector (km�2/s)
+    N - the node line vector (km^2/s)
     n - the magnitude of N
     cp - cross product of N and R
     RA - right ascension of the ascending node (rad)
@@ -147,12 +110,14 @@ def coe_from_sv(R,V,mu=MU_SUN_KM):
     r = np.linalg.norm(R)
     v = np.linalg.norm(V)
     vr = np.dot(R.transpose(),V)/r
-    H = np.cross(R,V, axisa=0, axisb=0)
+    H = np.cross(R,V, axisa=0, axisb=0).transpose()
     h = np.linalg.norm(H)
     #...Equation 4.7:
-    incl = np.arccos(H[2]/h)
+    if H.shape!=(3,1):
+        print(H.shape)
+    incl = np.arccos(H[2][0]/h)
     #...Equation 4.8:
-    N = np.cross(np.vstack((0,0,1)), H, axisa=0, axisb=0).transpose()
+    N = np.cross(np.vstack((0,0,1)).transpose(), H.transpose()).transpose()
     n = np.linalg.norm(N)
     #...Equation 4.9:
     if n != 0:
@@ -164,7 +129,7 @@ def coe_from_sv(R,V,mu=MU_SUN_KM):
     #...Equation 4.10:
     E = 1/mu*((v**2 - mu/r)*R - r*vr*V)
     e = np.linalg.norm(E)
-    #...Equation 4.12 (incorporating the case e = 0):
+    # in case e=0
     if n != 0:
         if e > eps:
             w = np.arccos(np.dot(N.transpose(),E)/n/e)
@@ -174,7 +139,7 @@ def coe_from_sv(R,V,mu=MU_SUN_KM):
             w = 0
     else:
         w = 0
-    #...Equation 4.13a (incorporating the case e = 0):
+    # in case e=0
     if e > eps:
         ta = np.arccos(np.dot(E.transpose(),R)/e/r)
         if vr < 0:
@@ -185,13 +150,13 @@ def coe_from_sv(R,V,mu=MU_SUN_KM):
             ta = np.arccos(np.dot(N.transpose(),R)/n/r)
         else:
             ta = 2*np.pi - np.arccos(np.dot(N,R)/n/r)
-    #...Equation 2.61 (a < 0 for a hyperbola):
+    # a<0 for a hyperbola
     a = h**2/mu/(1 - e**2)
 
     return [a,e,incl,ra,w,ta]
 
 
-def Ephem(planet_str,JDE,Frame='Helio'):
+def ephem(planet_str,JDE,Frame='Helio'):
     '''
     Finds the ephemeris for a planet given a Julian date using the Meeus algorithm
     '''
@@ -280,7 +245,7 @@ def psi_TOF(psi, r0_vec, rf_vec, mu=MU_SUN_KM):
     
     #get the new dt
     chi = np.sqrt(y/c2)
-    dt = (chi**3*c3+A*np.sqrt(y))/np.sqrt(mu)
+    dt = np.asscalar((chi**3*c3+A*np.sqrt(y))/np.sqrt(mu))
     return dt/86400.
 
 
@@ -289,10 +254,10 @@ def multirev_minflight(planet_names, dates, n_revs=0):
     Find the possible TOF based on the psi value for hyperbolic through multi-rev elliptical orbits
     '''
     #starting position
-    p1r, p1v = Ephem(planet_names[0], dates[0])
+    p1r, p1v = ephem(planet_names[0], dates[0])
 
     #collect the 
-    p2r, p2v = Ephem(planet_names[1], dates[1])
+    p2r, p2v = ephem(planet_names[1], dates[1])
 
     # get the time of flight for each psi, split by rev number and plot
     plt.figure()
@@ -300,14 +265,11 @@ def multirev_minflight(planet_names, dates, n_revs=0):
         psi_low = (2*n*np.pi)**2 if n!=0 else -4*np.pi #covers hyperbolic case
         psi_high = (2*(n+1)*np.pi)**2
         psis = np.linspace(psi_low+1e-6, psi_high-1e-6)
-        tof = []
-        for psi in psis:
-            tof_p = psi_TOF(psi, p1r, p2r)
-            tof.append(tof_p)
+        tof = np.squeeze(np.array([psi_TOF(psi,p1r,p2r) for psi in psis]))
         plt.plot(psis, tof, label=f'{n} Revolutions')
         plt.legend()
         plt.grid()
-        plt.xlabel(r'$\psi (rad^2)$')
+        plt.xlabel(r'$\psi$ ($rad^2$)')
         plt.ylabel('TOF (days)')
         plt.title('Time of Flight vs Psi')
         plt.xlim(-4*np.pi, psi_high)
@@ -316,8 +278,8 @@ def multirev_minflight(planet_names, dates, n_revs=0):
     if n_revs>0:
         min_psi = fminbound(psi_TOF, psi_low, psi_high, args=(p1r,p2r))
         min_TOF = psi_TOF(min_psi, p1r, p2r)
-        print(f'Minimum Transfer Possibility: {min_TOF} days')
-        print(f'Minimum Psi: {min_psi} rad^2')
+        print(f'Minimum Transfer Possibility: {min_TOF:.3f} days')
+        print(f'Minimum Psi: {min_psi:.3f} ${{rad^2}}$')
 
 
 def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
@@ -327,6 +289,12 @@ def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
     '''    
     #convert TOF to seconds
     dt0 = dt0_days*86400
+
+    # pre-define variables
+    v0_vec = [nan]*3
+    vf_vec = v0_vec
+    dnu = nan
+    psi = nan   
 
     if np.linalg.norm(rf_vec-r0_vec)/dt0<100: #bad case where they won't really find a valid solution
         
@@ -413,12 +381,6 @@ def ls(r0_vec, rf_vec, dt0_days, n_revs=0, DM=None, mu=MU_SUN_KM):
         v0_vec = (rf_vec-f*r0_vec)/g
         vf_vec = (gdot*rf_vec - r0_vec)/g
 
-    else:
-        v0_vec = [math.nan]*3
-        vf_vec = v0_vec
-        dnu = math.nan
-        psi= math.nan      
-
     return v0_vec, vf_vec
 
 
@@ -444,9 +406,9 @@ def flyby_diff(planet_strings,dates):
     Calculates the values of the excess velocity at arrival and departure of a planet given the information of the first, second, and third planet in the string
     '''
     #get the planet values
-    r1_vec, _ = Ephem(planet_strings[0],dates[0])
-    r2_vec, v2_vec = Ephem(planet_strings[1],dates[1])
-    r3_vec, _ = Ephem(planet_strings[2],dates[2])
+    r1_vec, _ = ephem(planet_strings[0],dates[0])
+    r2_vec, v2_vec = ephem(planet_strings[1],dates[1])
+    r3_vec, _ = ephem(planet_strings[2],dates[2])
 
     #do the Lambert's of each and only save the velocities
     _, v2_vec1 = ls(r1_vec,r2_vec,dates[1]-dates[0])
@@ -546,7 +508,7 @@ def res_orb(vinfm_GA1,GA1_rv,vinfp_GA2,GA2_rv, planet, min_r, XY, plot=False):
         plt.fill_between([min(phi_acc), max(phi_acc)], [max([max(rp1_acc),max(rp2_acc)]),max([max(rp1_acc),max(rp2_acc)])], color='y')
         plt.plot(phis,rp1,label='Flyby 1', color='b')
         plt.plot(phis,rp2,label='Flyby2', color='r')
-        plt.plot(phis,[min_r for _ in range(len(phis))], color='k', linestyle='--', label=r'$Min r_p$')
+        plt.plot(phis,[min_r for _ in range(len(phis))], color='k', linestyle='--', label=r'Min $r_p$')
         plt.text(np.median(phi_acc)-(max(phi_acc)-min(phi_acc))/4,min_r-2000,r'Valid $\phi$'+'\nRange')
         plt.xlabel(r'$\phi (deg)$')
         plt.ylabel('Perigee Radius (km)')
@@ -587,7 +549,7 @@ def bplane2(r_vec,v_vec,mu):
     B = b*Bhat
     Bt = np.dot(B.transpose(),T_hat).item()
     Br = np.dot(B.transpose(),R_hat).item()
-    theta = np.arccos(np.dot(T_hat.transpose(),B))
+    theta = np.arccos(np.dot(T_hat.transpose(),B)).item()
     theta = 2*np.pi - theta if Br<0 else theta
     return Bt, Br, b, theta
 
@@ -602,11 +564,11 @@ def bplane_correction(r_vec, v_vec, mu, Bt_desired, Br_desired, pert):
     delVi = np.vstack((1e3,1e3))
     dB = np.vstack((1e5, 1e5))
     k=0
-    v_orig = np.copy(v_vec)
+    v_new = np.copy(v_vec)
     while np.any(abs(delVi)>tol) and np.any(abs(dB)>tol):
         k+=1
         #new nominal B parameters
-        Bt_nom, Br_nom, *_ = bplane2(r_vec, v_vec, mu)
+        Bt_nom, Br_nom, *_ = bplane2(r_vec, v_new, mu)
 
         #perturb the velocity
         Vpx = v_vec + np.vstack((pert,0,0))
@@ -627,13 +589,13 @@ def bplane_correction(r_vec, v_vec, mu, Bt_desired, Br_desired, pert):
         delVi = np.linalg.inv(np.array([[dBtdVx,dBtdVy], [dBrdVx,dBrdVy]])) @ dB
         
         #update velocity vector
-        v_vec += np.vstack((delVi,0.))
+        v_new += np.vstack((delVi,0.))
         
         #update the TCM movement
         TCM += delVi
 
     #final outputs
-    return v_vec-v_orig, v_vec
+    return v_new-v_vec, v_new
 
 
 def rot2inert(rot_coords, non_tspan, L=EARTH_MOON_DIST_KM):
@@ -733,8 +695,8 @@ def tisserand(planet_numbers, contours, x_limits, y_axis='ra'):
                     rp_val = a*(1-e)/AU_KM
                 
                 else:
-                    plotting_val = math.nan
-                    rp_val = math.nan
+                    plotting_val = nan
+                    rp_val = nan
                 plottings[i,j,k] = plotting_val
                 rps[i,j,k] = rp_val
 			
@@ -769,7 +731,7 @@ def tisserand(planet_numbers, contours, x_limits, y_axis='ra'):
     if str.lower(y_axis)!='ra':
         axis_limits = [x_limits,min(plottings),100]
     plt.xlabel(r'$R_p$ (AU)')
-    plt.title([f'v_\infty shown are {contours} km/s'])
+    plt.title(f'$v_\infty$ shown are {contours} km/s')
     if str.lower(y_axis)=='ra':
         plt.ylabel(r'$R_a$ (AU)')
     elif str.lower(y_axis)=='period':
@@ -815,109 +777,29 @@ def tisserand_path(planet_num,vInfMag):
             rp.append(a*(1-e)/AU_KM)
             
         else:
-            ra.append(math.nan)
-            rp.append(math.nan)
+            ra.append(nan)
+            rp.append(nan)
     return rp, ra
-
-
-def pcp(planet1, planet2, leg_number, contour_info, num_ticks=11, n_revs=0, plot=True):
-    #initial departure day, how many days after want values, initial arrival
-    #date, how many days after want values, planet leaving from, planet
-    #arriving to, how often want a measuremm
-    #assume everything already in JD
-
-    C3 = np.zeros(shape=[len(planet2.dates),len(planet1.dates)])
-    v_inf = np.zeros(shape=[len(planet2.dates),len(planet1.dates)])
-    tof = np.zeros(shape=[len(planet2.dates),len(planet1.dates)])
-
-
-    #loop departure
-    for d, dep_date in enumerate(planet1.dates):
-        
-        #loop arrival
-        for a, arr_date in enumerate(planet2.dates):
-            
-            #find time of flight
-            tof[a,d] = arr_date-dep_date
-            
-            #ignore bad departure and arrivals
-            if tof[a,d]<=0:
-                C3[a,d] = math.nan
-                v_inf[a,d] = math.nan
-                
-            else:
-                
-                #find planets' ephemeris data
-                r1_vec, v1_vec = Ephem(planet1.name,dep_date)
-                r2_vec, v2_vec = Ephem(planet2.name,arr_date)
-                
-                #do Lambert's
-                v0_vec,vf_vec = ls(r1_vec,r2_vec,tof[a,d], n_revs)
-                
-                #collect the mission parameters
-                C3[a,d] = np.linalg.norm(v1_vec-v0_vec)**2
-                v_inf[a,d] = np.linalg.norm(v2_vec-vf_vec)
-
-    dep_dates, arr_dates = np.meshgrid(planet1.dates,planet2.dates)
-
-    #choose proper terminology for plotting
-    if leg_number>1:
-        dep_con = r'$V_\infty^+ (km/s)$'
-        trans = 'Transfer'
-        C3 = np.sqrt(C3)
-    else:
-        dep_con = r'$C_3 (km^2/s^2)$'
-        trans = 'Launch'
-
-    #actual plot
-    if plot==True:
-        C3_con, vinf_con, tof_con = contour_info
-        fig = plt.figure()
-        fig.set_label(f'Leg {leg_number}')
-        fig.canvas.manager.set_window_title(f'Leg {leg_number}')
-        ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
-        c3_lines = ax.contour(planet1.dates, planet2.dates, C3, C3_con, levels=contour_info[0], colors='r')
-        ax.clabel(c3_lines, c3_lines.levels, inline=True)
-        h_c3,_ = c3_lines.legend_elements()
-        vinf_lines = ax.contour(planet1.dates, planet2.dates, v_inf, vinf_con, levels=contour_info[1], colors='b')
-        ax.clabel(vinf_lines, vinf_lines.levels, inline=True)
-        h_vinf,_ = vinf_lines.legend_elements()
-        tof_lines = ax.contour(planet1.dates, planet2.dates, tof, tof_con, levels=contour_info[2], colors='k')
-        ax.clabel(vinf_lines, vinf_lines.levels, inline=True)
-        h_tof,_ = tof_lines.legend_elements()    
-
-        plt.xlabel(f'{planet1.name} Departure Date')
-        plt.ylabel(f'{planet2.name} Arrival Date')
-        plt.xticks(np.linspace(min(planet1.dates),max(planet1.dates),num_ticks), rotation = 45)
-        ax.set_xticklabels(pd.to_datetime(np.linspace(min(planet1.dates),max(planet1.dates),num_ticks), unit='D', origin='julian').strftime("%m/%d/%Y"))
-        plt.yticks(np.linspace(min(planet2.dates),max(planet2.dates),num_ticks))
-        ax.set_yticklabels(pd.to_datetime(np.linspace(min(planet2.dates),max(planet2.dates),num_ticks), unit='D', origin='julian').strftime("%m/%d/%Y"))
-        ax.legend([h_c3[0], h_vinf[0], h_tof[0]], [dep_con+f' @ {planet1.name}', r'$V_\infty^-$'+f'(km/s) @ {planet2.name}', 'TOF (days)'])
-        plt.grid
-        plt.title(f'{planet1.name}-{planet2.name} ' + trans)
-        planet_transfer = Planet_Transfer(planet1, planet2, transfer_tof=tof, leg_num=leg_number, vinfp_C3=C3, vinfm=v_inf)
-    
-    return  planet_transfer
 
 
 '''
 NEED TO FIGURE OUT WHAT THESE FUNCTIONS ACTUALLY DO AND THEN WRITE UP A DOC STRING FOR EACH
 '''
-def lscheck(planet1_str,dep_date,planet2_str,arr_date):
+def ls_check(planet1_str,dep_date,planet2_str,arr_date):
 
     #check the TOF
     tof = arr_date - dep_date
 
     #ignore bad departure and arrivals
     if tof<=0: #|| TOF(a,d)>=500
-        v_inf_out = math.nan
-        v_inf_in = math.nan
+        v_inf_out = nan
+        v_inf_in = nan
         
     else:
         
         #find planets' ephemeris data
-        r1_vec, v1_vec = Ephem(planet1_str,dep_date)
-        r2_vec, v2_vec = Ephem(planet2_str,arr_date)
+        r1_vec, v1_vec = ephem(planet1_str,dep_date)
+        r2_vec, v2_vec = ephem(planet2_str,arr_date)
         
         #do Lambert's
         v0_vec, vf_vec = ls(r1_vec,r2_vec,tof)
@@ -929,13 +811,13 @@ def lscheck(planet1_str,dep_date,planet2_str,arr_date):
     return v_inf_out, v_inf_in
 
 
-def legcheck(d1, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num):
+def leg_check(d1, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num):
     #go day to day
     daterange = planet_transfers[leg_num].planet2.date_range
     for d2 in daterange:
         
         #do Lambert's of the leg
-        vio, vii = lscheck(planet_transfers[leg_num].planet1.name,d1,planet_transfers[leg_num].planet2.name,d2)
+        vio, vii = ls_check(planet_transfers[leg_num].planet1.name,d1,planet_transfers[leg_num].planet2.name,d2)
         vinf_out[leg_num,:] = vio
         vinf_in[leg_num,:] = vii
         
@@ -957,7 +839,7 @@ def legcheck(d1, planet_transfers, saving_info, C3_max, stopping_conditions, vin
                     #continue if not the final leg of the mission
                     if leg_num!=planet_transfers[-1].leg_number:
                         #go to next leg_num
-                        saving_info = legcheck(d2, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num+1)
+                        saving_info = leg_check(d2, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num+1)
                     else:
                         #check that final arrival vinf_in isn't too big
                         if np.linalg.norm(vinf_in[leg_num,:])<vinf_max:
@@ -973,7 +855,7 @@ def legcheck(d1, planet_transfers, saving_info, C3_max, stopping_conditions, vin
                 #go to next leg_num
                 saving_info[-1,1] = C3
                 saving_info[-1,1+len(planet_transfers)] = d1
-                saving_info = legcheck(d2, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num+1)
+                saving_info = leg_check(d2, planet_transfers, saving_info, C3_max, stopping_conditions, vinf_out, vinf_in, vinf_max, leg_num+1)
     
     return saving_info
 
@@ -990,5 +872,5 @@ def pcp_search3(planet_transfers,C3_max,conditions,vinf_max):
     #do the work for each leg
     date_range = planet_transfers[0].planet1.date_range
     for d1 in date_range:
-        worthy_transfers = legcheck(d1, planet_transfers, worthy_transfers, C3_max, conditions, vinf_out, vinf_in, vinf_max, 1)
+        worthy_transfers = leg_check(d1, planet_transfers, worthy_transfers, C3_max, conditions, vinf_out, vinf_in, vinf_max, 1)
     return worthy_transfers
